@@ -1,0 +1,25 @@
+{
+  "business_name": "Jorion Technologies",
+  "timezone": "Africa/Lagos",
+  "booking_window_days": 7,
+  "slot_duration_minutes": 30,
+  "working_hours": {
+    "monday":    {"open": "09:00", "close": "17:00"},
+    "tuesday":   {"open": "09:00", "close": "17:00"},
+    "wednesday": {"open": "09:00", "close": "17:00"},
+    "thursday":  {"open": "09:00", "close": "17:00"},
+    "friday":    {"open": "09:00", "close": "16:00"},
+    "saturday":  {"open": "10:00", "close": "14:00"},
+    "sunday":    null
+  },
+  "break_times": [
+    {"start": "13:00", "end": "14:00"}
+  ],
+  "services": [
+    {"name": "Web Design", "duration_minutes": 30},
+    {"name": "AI Consultation", "duration_minutes": 60},
+    {"name": "Maintenance", "duration_minutes": 30}
+  ],
+  "max_bookings_per_slot": 1,
+  "send_email_confirmation": true
+}

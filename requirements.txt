@@ -1,0 +1,21 @@
+# ── Web framework ──
+Flask==3.0.3
+
+# ── Environment / config ──
+python-dotenv==1.0.1
+
+# ── HTTP (WhatsApp, Telegram, Brevo, Notion REST calls) ──
+requests==2.32.3
+
+# ── Notion SDK ──
+notion-client==2.2.1
+
+# ── Claude / Anthropic SDK (NLU intent parsing) ──
+anthropic==0.40.0
+
+# ── Twilio (WhatsApp send + RequestValidator for webhook signatures) ──
+twilio==9.3.7
+
+# ── Timezone handling (config-driven) ──
+# Python 3.11+ ships zoneinfo in the stdlib; tzdata ensures IANA names on all OSes.
+tzdata==2024.1
