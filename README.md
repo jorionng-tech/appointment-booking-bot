@@ -324,4 +324,4 @@ Jorion Technologies:
 
 ## 15. License & attribution
 
-Built by **Jorion Technologies**. See repository license for terms.
+MIT — see [LICENSE](LICENSE). © 2026 Jorion Technologies Limited.
