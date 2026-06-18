@@ -28,7 +28,7 @@ email side effects itself.
 
 import threading
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from datetime import datetime, timedelta
 
 try:
@@ -62,28 +62,49 @@ _MAX_UNCLEAR_ATTEMPTS = 1
 _MAX_NAME_LEN = 100
 _MIN_NAME_LEN = 2
 
+# Hard cap on the number of distinct phone numbers tracked in the in-memory
+# maps (sessions, per-number locks, rate-limiter events). When the cap is
+# exceeded, the least-recently-used entry is evicted so these maps cannot grow
+# without bound on a long-running server. Tier 2 (Redis) removes this concern.
+_MAX_TRACKED_NUMBERS = 5000
+
 
 # ── Rate limiter (Section 8.4) ────────────────────────────────────────────
 class RateLimiter:
     """Per-key sliding-window limiter: max N events per window. Thread-safe."""
 
-    def __init__(self, max_events: int = 20, window_seconds: int = 60):
+    def __init__(
+        self,
+        max_events: int = 20,
+        window_seconds: int = 60,
+        max_keys: int = _MAX_TRACKED_NUMBERS,
+    ):
         self._max = max_events
         self._window = window_seconds
-        self._events = defaultdict(deque)
+        self._max_keys = max_keys
+        self._events = OrderedDict()
         self._lock = threading.Lock()
 
     def allow(self, key: str) -> bool:
         now = time.monotonic()
         with self._lock:
-            q = self._events[key]
+            q = self._events.get(key)
+            if q is None:
+                q = self._events[key] = deque()
+            else:
+                self._events.move_to_end(key)  # mark as most-recently-used
             cutoff = now - self._window
             while q and q[0] < cutoff:
                 q.popleft()
             if len(q) >= self._max:
-                return False
-            q.append(now)
-            return True
+                allowed = False
+            else:
+                q.append(now)
+                allowed = True
+            # Bound memory: evict least-recently-used keys past the cap.
+            while len(self._events) > self._max_keys:
+                self._events.popitem(last=False)
+            return allowed
 
 
 # ── Conversation manager ──────────────────────────────────────────────────
@@ -96,9 +117,9 @@ class ConversationManager:
         self.tz = ZoneInfo(self.config["timezone"])
         self.business = self.config.get("business_name", "our business")
 
-        self._sessions = {}
+        self._sessions = OrderedDict()
         self._sessions_lock = threading.Lock()
-        self._per_number_locks = defaultdict(threading.Lock)
+        self._per_number_locks = OrderedDict()
         self._locks_guard = threading.Lock()
         self._rate = RateLimiter(max_events=20, window_seconds=60)
 
@@ -398,7 +419,15 @@ class ConversationManager:
     # ── Session storage helpers ────────────────────────────────────────────
     def _number_lock(self, phone: str) -> threading.Lock:
         with self._locks_guard:
-            return self._per_number_locks[phone]
+            lock = self._per_number_locks.get(phone)
+            if lock is None:
+                lock = self._per_number_locks[phone] = threading.Lock()
+            else:
+                self._per_number_locks.move_to_end(phone)  # most-recently-used
+            # Bound memory: evict least-recently-used locks past the cap.
+            while len(self._per_number_locks) > _MAX_TRACKED_NUMBERS:
+                self._per_number_locks.popitem(last=False)
+            return lock
 
     def _get_session(self, phone: str):
         with self._sessions_lock:
@@ -408,12 +437,17 @@ class ConversationManager:
             if time.monotonic() - session.get("_ts", 0) > _SESSION_TTL_SECONDS:
                 self._sessions.pop(phone, None)  # expired
                 return None
+            self._sessions.move_to_end(phone)  # most-recently-used
             return session
 
     def _set_session(self, phone: str, session: dict) -> None:
         session["_ts"] = time.monotonic()
         with self._sessions_lock:
             self._sessions[phone] = session
+            self._sessions.move_to_end(phone)  # most-recently-used
+            # Bound memory: evict least-recently-used sessions past the cap.
+            while len(self._sessions) > _MAX_TRACKED_NUMBERS:
+                self._sessions.popitem(last=False)
 
     def _reset(self, phone: str) -> None:
         with self._sessions_lock:
